@@ -30,6 +30,7 @@
 # include <config.h>
 #endif
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -222,6 +223,62 @@ static void _dbx_read_info(dbx_t *dbx)
                          "Got index %x",
                          index);
 
+    if (index == 0 && (dbx->info[i-1].index != 0)) {
+      dbx_progress_message(dbx->progress_handle,
+                           DBX_STATUS_WARNING,
+                           "Got zero index, manually finding our own");		  
+
+      dbx_progress_message(dbx->progress_handle,
+                           DBX_STATUS_WARNING,
+                           "Last valid index %x",
+                           dbx->info[i-1].index);
+			
+			int mannextindex = dbx->info[i-1].index;
+			int mansize;
+    int mancount = 0;
+		int mani;
+			for(mani = i; mani < dbx->message_count; mani++) {
+
+    dbx_progress_message(dbx->progress_handle,
+                         DBX_STATUS_WARNING,
+                         "Manual hunt got index %x",
+                         mannextindex);
+
+    fseek(dbx->file, mannextindex + 4, SEEK_SET);
+    fpos_t mancurpos;
+    fgetpos(dbx->file, &mancurpos);
+    //dbx_progress_message(dbx->progress_handle,
+    //                     DBX_STATUS_WARNING,
+    //                     "At man pos %x, reading size and count",
+    //                     mancurpos);
+    sys_fread_int(&mansize, dbx->file);
+    sys_fread_int(&mancount, dbx->file);
+    //dbx_progress_message(dbx->progress_handle,
+    //                     DBX_STATUS_WARNING,
+    //                     "Got raw count %x",
+    //                     count);
+    mancount = (mancount & 0x00FF0000) >> 16;
+
+    //dbx_progress_message(dbx->progress_handle,
+    //                     DBX_STATUS_WARNING,
+    //                     "Got size %d and count %d within info",
+    //                     size,
+    //                     count);
+    mannextindex = (mancurpos.__pos + mansize + 8);
+		
+		    dbx_progress_message(dbx->progress_handle,
+                         DBX_STATUS_WARNING,
+                         "Next index should be %08x (%02x %02x %02x %02x)",
+                         mannextindex,
+                         (mannextindex & 0xff),
+                         ((mannextindex >> 8) & 0xff),
+												 ((mannextindex >> 16) & 0xff),
+												 ((mannextindex >> 24) & 0xff));
+			}
+			
+			//exit(0);
+		}
+
     fseek(dbx->file, index + 4, SEEK_SET);
     fpos_t curpos;
     fgetpos(dbx->file, &curpos);
@@ -237,15 +294,20 @@ static void _dbx_read_info(dbx_t *dbx)
     //                     count);
     count = (count & 0x00FF0000) >> 16;
 
-    //dbx_progress_message(dbx->progress_handle,
-    //                     DBX_STATUS_WARNING,
-    //                     "Got size %d and count %d within info",
-    //                     size,
-    //                     count);
     dbx_progress_message(dbx->progress_handle,
                          DBX_STATUS_WARNING,
-                         "Next index should be %x",
-                         (curpos.__pos + size + 8));
+                         "Got size %d and count %d within info",
+                         size,
+                         count);
+    int nextindex = (curpos.__pos + size + 8);
+    dbx_progress_message(dbx->progress_handle,
+                         DBX_STATUS_WARNING,
+                         "Next index should be %08x (%02x %02x %02x %02x)",
+                         nextindex,
+                         (nextindex & 0xff),
+                         ((nextindex >> 8) & 0xff),
+												 ((nextindex >> 16) & 0xff),
+												 ((nextindex >> 24) & 0xff));
 
     dbx->info[i].valid = 0;
 
