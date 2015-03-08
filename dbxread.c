@@ -204,6 +204,11 @@ static void _dbx_read_info(dbx_t *dbx)
 {
   int i;
 
+  dbx_progress_message(dbx->progress_handle,
+                       DBX_STATUS_WARNING,
+                       "Reading info for %d messages",
+                       dbx->message_count);
+
   for(i = 0; i < dbx->message_count; i++) {
     int j;
     int size;
@@ -212,10 +217,35 @@ static void _dbx_read_info(dbx_t *dbx)
     int offset = 0;
     int pos = index + 12;
 
+    dbx_progress_message(dbx->progress_handle,
+                         DBX_STATUS_WARNING,
+                         "Got index %x",
+                         index);
+
     fseek(dbx->file, index + 4, SEEK_SET);
+    fpos_t curpos;
+    fgetpos(dbx->file, &curpos);
+    //dbx_progress_message(dbx->progress_handle,
+    //                     DBX_STATUS_WARNING,
+    //                     "At pos %x, reading size and count",
+    //                     curpos);
     sys_fread_int(&size, dbx->file);
     sys_fread_int(&count, dbx->file);
+    //dbx_progress_message(dbx->progress_handle,
+    //                     DBX_STATUS_WARNING,
+    //                     "Got raw count %x",
+    //                     count);
     count = (count & 0x00FF0000) >> 16;
+
+    //dbx_progress_message(dbx->progress_handle,
+    //                     DBX_STATUS_WARNING,
+    //                     "Got size %d and count %d within info",
+    //                     size,
+    //                     count);
+    dbx_progress_message(dbx->progress_handle,
+                         DBX_STATUS_WARNING,
+                         "Next index should be %x",
+                         (curpos.__pos + size + 8));
 
     dbx->info[i].valid = 0;
 
@@ -310,12 +340,14 @@ static void _dbx_read_info(dbx_t *dbx)
     }
 
     dbx->info[i].offset = _dbx_read_msg_offset(dbx, i);
-    
+
     if (dbx->options->safe_mode) {
       char filename[DBX_MAX_FILENAME];
       int msg_offset = dbx->info[i].offset;
-      if (dbx->info[i].offset == 0)  /* message only in index, not downloaded yet */
+      if (dbx->info[i].offset == 0) {
+        /* message only in index, not downloaded yet */
         msg_offset = dbx->info[i].index;
+      }
       sprintf(filename, "%08X.eml", (unsigned int) msg_offset);
       dbx->info[i].filename = strdup(filename);
     }
@@ -333,6 +365,11 @@ static int _dbx_read_index(dbx_t *dbx, int pos)
   char ptr_count = 0;
   int index_count;
 
+  dbx_progress_message(dbx->progress_handle,
+                       DBX_STATUS_WARNING,
+                       "Read index initial Pos %x",
+                       pos);
+
   if (pos <= 0 || dbx->file_size <= (unsigned long long int)pos) {
     dbx_progress_message(dbx->progress_handle,
                          DBX_STATUS_WARNING,
@@ -343,9 +380,25 @@ static int _dbx_read_index(dbx_t *dbx, int pos)
   }
 
   fseek(dbx->file, pos + 8, SEEK_SET);
+  fpos_t curpos;
+  fgetpos(dbx->file, &curpos);
+  dbx_progress_message(dbx->progress_handle,
+                       DBX_STATUS_WARNING,
+                       "Pos %x",
+                       curpos);
   sys_fread_int(&next_table, dbx->file);
+
   fseek(dbx->file, 5, SEEK_CUR);
+  fgetpos(dbx->file, &curpos);
+  dbx_progress_message(dbx->progress_handle,
+                       DBX_STATUS_WARNING,
+                       "Pointer count pos %x",
+                       curpos);
   sys_fread(&ptr_count, 1, 1, dbx->file);
+  dbx_progress_message(dbx->progress_handle,
+                       DBX_STATUS_WARNING,
+                       "Pointer count %d",
+                       ptr_count);
   if (ptr_count <= 0) {
     dbx_progress_message(dbx->progress_handle,
                          DBX_STATUS_WARNING,
@@ -359,17 +412,36 @@ static int _dbx_read_index(dbx_t *dbx, int pos)
   sys_fread_int(&index_count, dbx->file);
 
   if (index_count > 0) {
-    if (!_dbx_read_index(dbx, next_table))
+    dbx_progress_message(dbx->progress_handle,
+                         DBX_STATUS_WARNING,
+                         "Next table %x",
+                         next_table);
+    if (!_dbx_read_index(dbx, next_table)) {
+      dbx_progress_message(dbx->progress_handle,
+                           DBX_STATUS_WARNING,
+                           "Return from read index, next table %x",
+                           next_table);
       return 0;
+    }
   }
 
   pos += 24;
+
+  dbx_progress_message(dbx->progress_handle,
+                       DBX_STATUS_WARNING,
+                       "Pos pre realloc %x",
+                       pos);
 
   dbx->info = (dbx_info_t *)realloc(dbx->info, (dbx->capacity + ptr_count) * sizeof(dbx_info_t));
   dbx->capacity += ptr_count;
   for (i = 0; i < ptr_count; i++) {
     int index_ptr;
     fseek(dbx->file, pos, SEEK_SET);
+    dbx_progress_message(dbx->progress_handle,
+                         DBX_STATUS_WARNING,
+                         "Pos pre index read %x for message %d",
+                         pos,
+                         dbx->message_count);
     sys_fread_int(&index_ptr, dbx->file);
     sys_fread_int(&next_table, dbx->file);
     sys_fread_int(&index_count, dbx->file);
@@ -384,6 +456,11 @@ static int _dbx_read_index(dbx_t *dbx, int pos)
         return 0;
     }
   }
+
+  dbx_progress_message(dbx->progress_handle,
+                       DBX_STATUS_WARNING,
+                       "Ret 1 %x",
+                       pos);
 
   return 1;
 }
@@ -400,10 +477,17 @@ static int _dbx_read_indexes(dbx_t *dbx)
   fseek(dbx->file, ITEM_COUNT, SEEK_SET);
   sys_fread_int(&item_count, dbx->file);
 
-  if (item_count > 0)
+  if (item_count > 0) {
+    dbx_progress_message(dbx->progress_handle,
+                         DBX_STATUS_WARNING,
+                         "Reading index, ptr %x, count %d",
+                         index_ptr,
+                         item_count);
+
     return _dbx_read_index(dbx, index_ptr);
-  else
+  } else {
     return 0;
+  }
 }
 
 static dbx_chains_t *_dbx_get_scan_chains(dbx_t *dbx, long long int offset, int deleted)
